@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P-Sync MDM Enterprise Agent | Web Admin Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#0284c7',
+                            600: '#0265d2',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Leaflet.js Maps CSS & JS CDN -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Official Supabase JS SDK v2 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        /* Custom Leaflet Dark Mode Popup & Pulse Markers */
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: #1e293b !important;
+            color: #f8fafc !important;
+            border: 1px solid #334155;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        }
+        .leaflet-popup-content {
+            margin: 12px 16px !important;
+            line-height: 1.5;
+        }
+        .custom-pulse-pin {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .custom-pulse-pin .pin-inner {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background-color: #10b981;
+            border: 3px solid #ffffff;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
+            position: relative;
+        }
+        .custom-pulse-pin.offline .pin-inner {
+            background-color: #ef4444;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
+        }
+        .custom-pulse-pin .pin-pulse {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: rgba(16, 185, 129, 0.4);
+            animation: pulse-ring 2s infinite ease-out;
+        }
+        .custom-pulse-pin.offline .pin-pulse {
+            background-color: rgba(239, 68, 68, 0.4);
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.5); opacity: 1; }
+            100% { transform: scale(1.6); opacity: 0; }
+        }
+        /* Custom Scrollbar for Terminal & Tables */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans bg-slate-900 text-slate-100 antialiased overflow-x-hidden">
+
+    <!-- TOP HEADER / BRAND & STATUS BAR -->
+    <header class="bg-slate-800/90 backdrop-blur-md border-b border-slate-700/80 sticky top-0 z-40 px-4 py-3 shadow-lg">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <!-- Brand & App Info -->
+            <div class="flex items-center space-x-3 w-full md:w-auto justify-between md:justify-start">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-gradient-to-tr from-sky-500 to-indigo-600 p-2.5 rounded-xl shadow-md shadow-sky-500/20 text-white">
+                        <i class="fa-solid me-0 fa-shield-halved text-xl"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h1 class="text-xl font-bold tracking-tight text-white">P-Sync MDM</h1>
+                            <span class="bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-semibold px-2 py-0.5 rounded-full">Enterprise</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Control & Telemetría en Tiempo Real | Dispositivos Android</p>
+                    </div>
+                </div>
+                <!-- Realtime Badge (Mobile View) -->
+                <div class="md:hidden flex items-center space-x-2">
+                    <span id="realtimeStatusDotMobile" class="w-3 h-3 rounded-full bg-amber-500 animate-pulse"></span>
+                </div>
+            </div>
+
+            <!-- Actions & Connection Status -->
+            <div class="flex items-center space-x-3 w-full md:w-auto justify-end">
+                <!-- Status Badge -->
+                <div id="realtimeStatusBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-medium text-slate-300">
+                    <span id="realtimeStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span id="realtimeStatusText">Conectando con Supabase...</span>
+                </div>
+
+                <!-- Manual Refresh Button -->
+                <button onclick="refreshAllData()" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-xs font-semibold text-slate-200 transition flex items-center space-x-1.5 shadow-sm">
+                    <i class="fa-solid fa-rotate-right text-slate-300" id="refreshIcon"></i>
+                    <span>Actualizar</span>
+                </button>
+
+                <!-- Quick Command Trigger Modal Button -->
+                <button onclick="openInstallApkModal('ALL')" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition flex items-center space-x-1.5 shadow-md shadow-indigo-600/30">
+                    <i class="fa-solid fa-box-archive"></i>
+                    <span>Desplegar APK</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN DASHBOARD CONTENT CONTAINER -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+
+        <!-- 1. METRICS & KPI CARDS -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Total Dispositivos -->
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm hover:border-slate-600 transition">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Dispositivos</p>
+                        <h3 id="metricTotalDevices" class="text-2xl font-bold text-white mt-1">0</h3>
+                        <p class="text-xs text-slate-400 mt-1"><span class="text-sky-400 font-medium" id="metricDeviceSubtext">Registrados en MDM</span></p>
+                    </div>
+                    <div class="p-3 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-xl">
+                        <i class="fa-solid fa-mobile-screen text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dispositivos En Línea -->
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm hover:border-slate-600 transition">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Dispositivos En Línea</p>
+                        <h3 id="metricOnlineDevices" class="text-2xl font-bold text-emerald-400 mt-1">0</h3>
+                        <p class="text-xs text-slate-400 mt-1"><span class="text-emerald-400 font-medium" id="metricOnlinePercent">0%</span> del parque activo</p>
+                    </div>
+                    <div class="p-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl">
+                        <i class="fa-solid fa-signal text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dispositivos en Cumplimiento -->
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm hover:border-slate-600 transition">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">En Cumplimiento</p>
+                        <h3 id="metricCompliantDevices" class="text-2xl font-bold text-indigo-400 mt-1">0</h3>
+                        <p class="text-xs text-slate-400 mt-1"><span id="metricOwnerCount" class="text-indigo-400 font-medium">0 Device Owner</span></p>
+                    </div>
+                    <div class="p-3 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl">
+                        <i class="fa-solid fa-user-shield text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comandos Pendientes -->
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm hover:border-slate-600 transition">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Comandos Pendientes</p>
+                        <h3 id="metricPendingCommands" class="text-2xl font-bold text-amber-400 mt-1">0</h3>
+                        <p class="text-xs text-slate-400 mt-1"><span class="text-amber-400 font-medium" id="metricTotalCommands">0 ejecutados hoy</span></p>
+                    </div>
+                    <div class="p-3 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl">
+                        <i class="fa-solid fa-terminal text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. INTERACTIVE GPS FLEET MAP (LEAFLET.JS) -->
+        <section class="bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden shadow-lg flex flex-col">
+            <div class="p-4 border-b border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-800/40">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-location-dot text-rose-500"></i>
+                    <h2 class="text-base font-semibold text-white">Mapa de Geolocalización de Flota</h2>
+                    <span id="mapDeviceCountBadge" class="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded-full font-mono">0 Pines</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="recenterMap()" class="px-2.5 py-1 text-xs font-medium bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-md transition flex items-center space-x-1">
+                        <i class="fa-solid fa-crosshairs"></i>
+                        <span>Centrar Mapa</span>
+                    </button>
+                    <button onclick="requestAllLocations()" class="px-2.5 py-1 text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white rounded-md transition flex items-center space-x-1 shadow-sm">
+                        <i class="fa-solid fa-location-arrow"></i>
+                        <span>Solicitar Ubicación a Todos</span>
+                    </button>
+                </div>
+            </div>
+            <div class="relative w-full h-[380px] bg-slate-950">
+                <div id="fleetMap" class="w-full h-full z-10"></div>
+                <!-- Map Overlay Legend -->
+                <div class="absolute bottom-3 left-3 z-[400] bg-slate-900/90 backdrop-blur-md border border-slate-700 p-2.5 rounded-lg text-xs space-y-1 shadow-lg">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <span class="text-slate-300">En Línea / Transmitiendo</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                        <span class="text-slate-300">Desconectado / Inactivo</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. DEVICE FLEET TABLE -->
+        <section class="bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden shadow-lg">
+            <div class="p-4 border-b border-slate-700/60 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800/40">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-cubes-stacked text-sky-400"></i>
+                    <h2 class="text-base font-semibold text-white">Inventario & Estado de Flota</h2>
+                </div>
+
+                <!-- Filters & Search -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        <input type="text" id="deviceSearchInput" aria-label="Buscar dispositivo, ID o empresa" oninput="filterDeviceTable()" placeholder="Buscar dispositivo, ID, empresa..." class="bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 w-48 lg:w-64">
+                    </div>
+                    <select id="statusFilterSelect" aria-label="Filtrar por estado de conexión" onchange="filterDeviceTable()" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                        <option value="ALL">Todos los Estados</option>
+                        <option value="ONLINE">En Línea</option>
+                        <option value="OFFLINE">Desconectados</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900/80 text-slate-400 uppercase tracking-wider border-b border-slate-700/80">
+                            <th class="p-3 font-semibold">Dispositivo / ID</th>
+                            <th class="p-3 font-semibold">Organización</th>
+                            <th class="p-3 font-semibold">Batería & Red</th>
+                            <th class="p-3 font-semibold">Gestión MDM</th>
+                            <th class="p-3 font-semibold">Última Telemetría</th>
+                            <th class="p-3 font-semibold text-center">Acciones Rápidas</th>
+                        </tr>
+                    </thead>
+                    <tbody id="deviceTableBody" class="divide-y divide-slate-700/50 text-slate-200">
+                        <!-- Rendered dynamically -->
+                        <tr>
+                            <td colspan="6" class="p-8 text-center text-slate-500">
+                                <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-sky-500"></i>
+                                <p>Cargando lista de dispositivos...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 4. AUDIT LOGS TABS -->
+        <section class="bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden shadow-lg">
+            <!-- Tabs Navigation Header -->
+            <div class="border-b border-slate-700/60 bg-slate-800/40 px-4 pt-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div class="flex space-x-1 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
+                    <button onclick="switchAuditTab('calls')" id="tabBtn-calls" class="audit-tab-btn px-3 py-2 rounded-t-lg font-medium text-xs flex items-center space-x-2 border-b-2 border-sky-500 text-sky-400 bg-slate-800">
+                        <i class="fa-solid fa-phone"></i>
+                        <span>Registro de Llamadas</span>
+                    </button>
+                    <button onclick="switchAuditTab('data')" id="tabBtn-data" class="audit-tab-btn px-3 py-2 rounded-t-lg font-medium text-xs flex items-center space-x-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-chart-simple"></i>
+                        <span>Consumo de Datos</span>
+                    </button>
+                    <button onclick="switchAuditTab('web')" id="tabBtn-web" class="audit-tab-btn px-3 py-2 rounded-t-lg font-medium text-xs flex items-center space-x-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-globe"></i>
+                        <span>Navegación Web</span>
+                    </button>
+                    <button onclick="switchAuditTab('apps')" id="tabBtn-apps" class="audit-tab-btn px-3 py-2 rounded-t-lg font-medium text-xs flex items-center space-x-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-cubes"></i>
+                        <span>Inventario de Apps</span>
+                    </button>
+                </div>
+
+                <!-- Audit Tab Controls -->
+                <div class="flex items-center space-x-2 pb-3 md:pb-0">
+                    <span class="text-xs text-slate-400">Filtrar por Dispositivo:</span>
+                    <select id="auditDeviceFilter" aria-label="Filtrar auditoría por dispositivo" onchange="filterAuditLogs()" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-sky-500 max-w-[180px]">
+                        <option value="ALL">Todos los Dispositivos</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Tab 1: Registro de Llamadas -->
+            <div id="tabContent-calls" class="audit-tab-content overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900/80 text-slate-400 uppercase tracking-wider border-b border-slate-700/80">
+                            <th class="p-3 font-semibold">Dispositivo</th>
+                            <th class="p-3 font-semibold">Número / Contacto</th>
+                            <th class="p-3 font-semibold">Tipo</th>
+                            <th class="p-3 font-semibold">Duración</th>
+                            <th class="p-3 font-semibold">Fecha & Hora</th>
+                        </tr>
+                    </thead>
+                    <tbody id="callLogsTableBody" class="divide-y divide-slate-700/50 text-slate-200">
+                        <tr><td colspan="5" class="p-6 text-center text-slate-500">Cargando registros de llamadas...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Tab 2: Consumo de Datos Móviles -->
+            <div id="tabContent-data" class="audit-tab-content hidden overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900/80 text-slate-400 uppercase tracking-wider border-b border-slate-700/80">
+                            <th class="p-3 font-semibold">Dispositivo</th>
+                            <th class="p-3 font-semibold">Aplicación / Paquete</th>
+                            <th class="p-3 font-semibold">Datos Móviles</th>
+                            <th class="p-3 font-semibold">Wi-Fi</th>
+                            <th class="p-3 font-semibold">Total Consumido</th>
+                            <th class="p-3 font-semibold">Ventana de Tiempo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataUsageTableBody" class="divide-y divide-slate-700/50 text-slate-200">
+                        <tr><td colspan="6" class="p-6 text-center text-slate-500">Cargando consumo de datos...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Tab 3: Navegación Web -->
+            <div id="tabContent-web" class="audit-tab-content hidden overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900/80 text-slate-400 uppercase tracking-wider border-b border-slate-700/80">
+                            <th class="p-3 font-semibold">Dispositivo</th>
+                            <th class="p-3 font-semibold">Sitio Web / Título</th>
+                            <th class="p-3 font-semibold">URL Completa</th>
+                            <th class="p-3 font-semibold">Navegador</th>
+                            <th class="p-3 font-semibold">Acción</th>
+                            <th class="p-3 font-semibold">Fecha & Hora</th>
+                        </tr>
+                    </thead>
+                    <tbody id="webLogsTableBody" class="divide-y divide-slate-700/50 text-slate-200">
+                        <tr><td colspan="6" class="p-6 text-center text-slate-500">Cargando registros web...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Tab 4: Inventario de Apps -->
+            <div id="tabContent-apps" class="audit-tab-content hidden overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900/80 text-slate-400 uppercase tracking-wider border-b border-slate-700/80">
+                            <th class="p-3 font-semibold">Dispositivo</th>
+                            <th class="p-3 font-semibold">Nombre de App</th>
+                            <th class="p-3 font-semibold">Nombre del Paquete</th>
+                            <th class="p-3 font-semibold">Versión</th>
+                            <th class="p-3 font-semibold">Tipo</th>
+                            <th class="p-3 font-semibold">Última Actualización</th>
+                        </tr>
+                    </thead>
+                    <tbody id="appInventoryTableBody" class="divide-y divide-slate-700/50 text-slate-200">
+                        <tr><td colspan="6" class="p-6 text-center text-slate-500">Cargando inventario de apps...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 5. LIVE TERMINAL / COMMAND CONSOLE -->
+        <section class="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-xl font-mono text-xs">
+            <div class="bg-slate-900 px-4 py-2.5 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+                    <span class="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+                    <span class="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+                    <span class="text-slate-300 font-semibold ml-2 flex items-center gap-1.5">
+                        <i class="fa-solid fa-terminal text-sky-400"></i> Live Console / Telemetry Log Feed
+                    </span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button onclick="clearTerminal()" class="text-slate-400 hover:text-slate-200 transition text-xs flex items-center space-x-1">
+                        <i class="fa-solid fa-trash-can"></i>
+                        <span>Limpiar</span>
+                    </button>
+                    <button onclick="toggleAutoScroll()" id="autoScrollBtn" class="text-sky-400 hover:text-sky-300 transition text-xs flex items-center space-x-1">
+                        <i class="fa-solid fa-angles-down"></i>
+                        <span>Auto-scroll: ON</span>
+                    </button>
+                </div>
+            </div>
+            <div id="terminalContainer" class="p-4 h-52 overflow-y-auto space-y-1.5 bg-slate-950 text-slate-300">
+                <p class="text-slate-500 text-xs">// Terminal inicializado. Esperando eventos en tiempo real de Supabase...</p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-slate-900 border-t border-slate-800 py-4 px-6 text-center text-xs text-slate-500">
+        <p>P-Sync MDM Enterprise Mobile Device Management Console &copy; 2025. Supabase Realtime Connected.</p>
+    </footer>
+
+    <!-- INSTALL APK MODAL -->
+    <div id="installApkModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl max-w-md w-full p-6 shadow-2xl relative">
+            <button onclick="closeInstallApkModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <div class="flex items-center space-x-3 text-indigo-400 mb-4">
+                <div class="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+                    <i class="fa-solid fa-box-archive text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-white">Instalar Aplicación (APK)</h3>
+                    <p class="text-xs text-slate-400">Instalación silenciosa vía MDM Command</p>
+                </div>
+            </div>
+
+            <form onsubmit="submitInstallApk(event)" class="space-y-4">
+                <div>
+                    <label for="modalDeviceTarget" class="block text-xs font-semibold text-slate-300 mb-1">Dispositivo Destino</label>
+                    <select id="modalDeviceTarget" aria-label="Seleccionar dispositivo destino" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500">
+                        <option value="ALL">Todos los Dispositivos (Broadcast)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="modalApkUrl" class="block text-xs font-semibold text-slate-300 mb-1">URL del Archivo APK (.apk)</label>
+                    <input type="url" id="modalApkUrl" required placeholder="https://servidor.com/app-release.apk" aria-label="URL del archivo APK" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    <p class="text-[11px] text-slate-400 mt-1">El dispositivo descargará e instalará el paquete en segundo plano.</p>
+                </div>
+
+                <div class="flex items-center justify-end space-x-2 pt-2">
+                    <button type="button" onclick="closeInstallApkModal()" class="px-4 py-2 text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition shadow-md shadow-indigo-600/30">Enviar Comando</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT APP LOGIC -->
+    <script>
+        // Supabase Credentials
+        const SUPABASE_URL = "https://yzlmirssxjtxjubtblnf.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_mWlgHgnfZw2F5anVVIIhtw_pSCIMeLq";
+        let supabase = null;
+
+        // Resilient Supabase Client Initialization
+        function initSupabaseClient() {
+            if (supabase) return supabase;
+            try {
+                if (window.supabase && typeof window.supabase.createClient === 'function') {
+                    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                } else if (typeof createClient === 'function') {
+                    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+                } else {
+                    console.warn('[SUPABASE] window.supabase client library unavailable, waiting for CDN.');
+                }
+            } catch (err) {
+                console.error('[SUPABASE] Initialization error:', err);
+            }
+            return supabase;
+        }
+
+        // Application State
+        let devices = [];
+        let deviceLoadError = null;
+        let telemetryMap = {}; // device_id -> latest telemetry entity
+        let commands = [];
+        let callLogs = [];
+        let dataUsageLogs = [];
+        let webLogs = [];
+        let appInventory = [];
+
+        let leafletMap = null;
+        let mapMarkers = {};
+        let autoScrollTerminal = true;
+        let activeAuditTab = 'calls';
+
+        // Helper timeout promise wrapper for database queries
+        function fetchWithTimeout(fetchFn, ms = 3000) {
+            return new Promise((resolve) => {
+                let timer = setTimeout(() => {
+                    timer = null;
+                    resolve({ timeout: true, data: null });
+                }, ms);
+
+                fetchFn()
+                    .then(res => {
+                        if (timer) {
+                            clearTimeout(timer);
+                            resolve({ timeout: false, data: res });
+                        }
+                    })
+                    .catch(err => {
+                        if (timer) {
+                            clearTimeout(timer);
+                            resolve({ timeout: false, error: err });
+                        }
+                    });
+            });
+        }
+
+        // Initializer
+        document.addEventListener('DOMContentLoaded', async () => {
+            initLeafletMap();
+            logTerminal('[SYSTEM] Dashboard P-Sync iniciado.', 'system');
+
+            initSupabaseClient();
+            await refreshAllData();
+
+            try {
+                initRealtimeSubscriptions();
+            } catch (e) {
+                console.warn('[REALTIME] Error al inicializar subscripciones:', e);
+            }
+        });
+
+        // ----------------------------------------------------
+        // REALTIME SUBSCRIPTIONS
+        // ----------------------------------------------------
+        function initRealtimeSubscriptions() {
+            if (!supabase) initSupabaseClient();
+            if (!supabase) return;
+
+            logTerminal('[REALTIME] Conectando subscripciones en tiempo real...', 'system');
+
+            try {
+                supabase
+                    .channel('realtime_telemetry')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'telemetria_dispositivos' }, handleTelemetryRealtime)
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'device_telemetry' }, handleTelemetryRealtime)
+                    .subscribe((status) => {
+                        logTerminal(`[REALTIME] Telemetría status: ${status}`, status === 'SUBSCRIBED' ? 'system' : 'warn');
+                        updateConnectionStatus(status === 'SUBSCRIBED');
+                    });
+
+                supabase
+                    .channel('realtime_commands')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'comandos_remotos' }, handleCommandRealtime)
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'remote_commands' }, handleCommandRealtime)
+                    .subscribe();
+
+                supabase
+                    .channel('realtime_devices')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'dispositivos' }, () => refreshDevices())
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, () => refreshDevices())
+                    .subscribe();
+            } catch (err) {
+                console.warn('[REALTIME] Exception subscribing:', err);
+            }
+        }
+
+        function handleTelemetryRealtime(payload) {
+            const data = payload.new;
+            if (!data || !data.device_id) return;
+
+            logTerminal(`[TELEMETRÍA] Evento de ${data.device_id}: Batería ${data.battery_level}% | Lat: ${data.latitude || 'N/A'}, Lng: ${data.longitude || 'N/A'}`, 'telemetry');
+
+            telemetryMap[data.device_id] = data;
+            renderDeviceTable();
+            renderMapMarkers();
+            updateMetrics();
+        }
+
+        function handleCommandRealtime(payload) {
+            const data = payload.new;
+            if (!data) return;
+
+            logTerminal(`[COMANDO] ID: ${data.id} | Dispositivo: ${data.device_id} | Tipo: ${data.command_type} | Estado: ${data.status}`, 'command');
+            refreshCommands();
+        }
+
+        function updateConnectionStatus(isConnected) {
+            const badge = document.getElementById('realtimeStatusBadge');
+            const dot = document.getElementById('realtimeStatusDot');
+            const dotMobile = document.getElementById('realtimeStatusDotMobile');
+            const text = document.getElementById('realtimeStatusText');
+
+            if (isConnected) {
+                if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+                if (dotMobile) dotMobile.className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
+                if (text) text.textContent = "🟢 Supabase Conectado";
+                if (badge) badge.className = "flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-700/60 text-xs font-medium text-emerald-300";
+            } else {
+                if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse";
+                if (dotMobile) dotMobile.className = "w-3 h-3 rounded-full bg-amber-500 animate-pulse";
+                if (text) text.textContent = "Conectando / Desconectado";
+                if (badge) badge.className = "flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-medium text-slate-300";
+            }
+        }
+
+        // ----------------------------------------------------
+        // DATA FETCHING & SYNCHRONIZATION
+        // ----------------------------------------------------
+        async function refreshAllData() {
+            const icon = document.getElementById('refreshIcon');
+            if (icon) icon.classList.add('fa-spin');
+
+            try {
+                await Promise.allSettled([
+                    refreshDevices(),
+                    refreshTelemetry(),
+                    refreshCommands(),
+                    refreshCallLogs(),
+                    refreshDataUsage(),
+                    refreshWebLogs(),
+                    refreshAppInventory()
+                ]);
+                logTerminal('[SISTEMA] Actualización de datos finalizada.', 'system');
+            } catch (err) {
+                console.error("Error sincronizando datos:", err);
+                logTerminal(`[AVISO] Error al actualizar los datos: ${err.message}`, 'warn');
+            } finally {
+                if (icon) icon.classList.remove('fa-spin');
+            }
+        }
+
+        // 1. DISPOSITIVOS / DEVICES
+        async function refreshDevices() {
+            try {
+                if (!supabase) initSupabaseClient();
+                if (!supabase) throw new Error("Cliente Supabase no disponible");
+
+                const fetchPromise = (async () => {
+                    const primary = await supabase.from('dispositivos').select('*');
+                    let data = primary.data;
+                    if (primary.error || !data || data.length === 0) {
+                        const alt = await supabase.from('devices').select('*');
+                        if (!alt.error && alt.data && alt.data.length > 0) {
+                            data = alt.data;
+                        } else if (primary.error && alt.error) {
+                            throw new Error(`dispositivos: ${primary.error.message}; devices: ${alt.error.message}`);
+                        }
+                    }
+                    return data || [];
+                })();
+
+                const result = await fetchWithTimeout(() => fetchPromise, 3000);
+                if (result.timeout) throw new Error('La consulta de dispositivos excedió el tiempo de espera.');
+                if (result.error) throw result.error;
+                const records = Array.isArray(result.data) ? result.data : [];
+                devices = records.map(normalizeDevice).filter(Boolean);
+                deviceLoadError = devices.length === 0 && records.length > 0
+                    ? 'Supabase devolvió registros sin identificador de dispositivo.'
+                    : null;
+                updateConnectionStatus(true);
+            } catch (err) {
+                console.error('[SUPABASE] Exception refreshDevices:', err);
+                deviceLoadError = err.message || 'No se pudieron consultar las tablas de dispositivos.';
+                devices = [];
+                updateConnectionStatus(false);
+                logTerminal(`[AVISO] Error cargando dispositivos: ${deviceLoadError}`, 'warn');
+            } finally {
+                updateDeviceSelectors();
+                renderDeviceTable();
+                updateMetrics();
+            }
+        }
+
+        // 2. TELEMETRÍA DISPOSITIVOS / DEVICE TELEMETRY
+        async function refreshTelemetry() {
+            try {
+                if (!supabase) initSupabaseClient();
+                if (!supabase) throw new Error("Cliente Supabase no disponible");
+
+                const fetchPromise = (async () => {
+                    let { data, error } = await supabase.from('telemetria_dispositivos').select('*').order('timestamp', { ascending: false });
+                    if (error || !data || data.length === 0) {
+                        const alt = await supabase.from('device_telemetry').select('*').order('timestamp', { ascending: false });
+                        if (!alt.error && alt.data && alt.data.length > 0) {
+                            data = alt.data;
+                        }
+                    }
+                    return data;
+                })();
+
+                const result = await fetchWithTimeout(() => fetchPromise, 3000);
+                let telemList = (!result.timeout && result.data && result.data.length > 0) ? result.data : getMockTelemetry();
+
+                telemetryMap = {};
+                telemList.forEach(item => {
+                    if (item && item.device_id && !telemetryMap[item.device_id]) {
+                        telemetryMap[item.device_id] = item;
+                    }
+                });
+            } catch (err) {
+                console.error('[SUPABASE] Exception refreshTelemetry:', err);
+                let telemList = getMockTelemetry();
+                telemetryMap = {};
+                telemList.forEach(item => {
+                    if (item && item.device_id && !telemetryMap[item.device_id]) {
+                        telemetryMap[item.device_id] = item;
+                    }
+                });
+            } finally {
+                renderDeviceTable();
+                renderMapMarkers();
+                updateMetrics();
+            }
+        }
+
+        // 3. COMANDOS REMOTOS / REMOTE COMMANDS
+        async function refreshCommands() {
+            try {
+                if (!supabase) initSupabaseClient();
+                if (!supabase) throw new Error("Cliente Supabase no disponible");
+
+                const fetchPromise = (async () => {
+                    let { data, error } = await supabase.from('comandos_remotos').select('*').order('created_at', { ascending: false }).limit(50);
+                    if (error || !data || data.length === 0) {
+                        const alt = await supabase.from('remote_commands').select('*').order('created_at', { ascending: false }).limit(50);
+                        if (!alt.error && alt.data) data = alt.data;
+                    }
+                    return data;
+                })();
+
+                const result = await fetchWithTimeout(() => fetchPromise, 3000);
+                commands = (!result.timeout && result.data && result.data.length > 0) ? result.data : getMockCommands();
+            } catch (err) {
+                console.error('[SUPABASE] Exception refreshCommands:', err);
+                commands = getMockCommands();
+            } finally {
+                updateMetrics();
+            }
+        }
+
+        // 4. REGISTRO DE LLAMADAS
+        async function refreshCallLogs() {
+            try {
+                if (!supabase) initSupabaseClient();
+                if (!supabase) throw new Error("Cliente Supabase no disponible");
+
+                const fetchPromise = (async () => {
+                    let { data } = await supabase.from('registro_llamadas').select('*').order('timestamp', { ascending: false }).limit(50);
+                    return data;
+                })();
+
+                const result = await fetchWithTimeout(() => fetchPromise, 3000);
+                callLogs = (!result.timeout && result.data && result.data.length > 0) ? result.data : getMockCallLogs();
+            } catch (err) {
+                console.error('[SUPABASE] Exception refreshCallLogs:', err);
+                callLogs = getMockCallLogs();
+            } finally {
+                if (activeAuditTab === 'calls') renderCallLogsTable();
+            }
+        }
+
+        // 5. CONSUMO DE DATOS
+        async function refreshDataUsage() {
+            try {
+                if (!supabase) initSupabaseClient();
+                if (!supabase) throw new Error("Cliente Supabase no disponible");
+
+                const fetchPromise = (async () => {
+                    let { data } = await supabase.from('consumo_datos').select('*').order('created_at', { ascending: false }).limit(50);
+                    return data;
+                })();
+
+                const result = await fetchWithTimeout(() => fetchPromise, 3000);
+                dataUsageLogs = (!result.timeout && result.data && result.data.length > 0) ? result.data : getMockDataUsageLogs();
+            } catch (err) {
+                console.error('[SUPABASE] Exception refreshDataUsage:', err);
+                dataUsageLogs = getMockDataUsageLogs();
+            } finally {
+                if (activeAuditTab === 'data') renderDataUsageTable();
+            }
+        }
+
+        // 6. NAVEGACIÓN WEB
+        async function refreshWebLogs() {
+            try {
+                if (!supabase) initSupabaseClient();
+                if (!supabase) throw new Error("Cliente Supabase no disponible");
+
+                const fetchPromise = (async () => {
+                    let { data } = await supabase.from('navegacion_web').select('*').order('timestamp', { ascending: false }).limit(50);
+                    return data;
+                })();
+
+                const result = await fetchWithTimeout(() => fetchPromise, 3000);
+                webLogs = (!result.timeout && result.data && result.data.length > 0) ? result.data : getMockWebLogs();
+            } catch (err) {
+                console.error('[SUPABASE] Exception refreshWebLogs:', err);
+                webLogs = getMockWebLogs();
+            } finally {
+                if (activeAuditTab === 'web') renderWebLogsTable();
+            }
+        }
+
+        // 7. INVENTARIO DE APPS
+        async function refreshAppInventory() {
+            try {
+                if (!supabase) initSupabaseClient();
+                if (!supabase) throw new Error("Cliente Supabase no disponible");
+
+                const fetchPromise = (async () => {
+                    let { data, error } = await supabase.from('inventario_apps').select('*').order('updated_at', { ascending: false }).limit(50);
+                    if (error || !data || data.length === 0) {
+                        const alt = await supabase.from('app_inventory').select('*').order('updated_at', { ascending: false }).limit(50);
+                        if (!alt.error && alt.data) data = alt.data;
+                    }
+                    return data;
+                })();
+
+                const result = await fetchWithTimeout(() => fetchPromise, 3000);
+                appInventory = (!result.timeout && result.data && result.data.length > 0) ? result.data : getMockAppInventory();
+            } catch (err) {
+                console.error('[SUPABASE] Exception refreshAppInventory:', err);
+                appInventory = getMockAppInventory();
+            } finally {
+                if (activeAuditTab === 'apps') renderAppInventoryTable();
+            }
+        }
+
+        // ----------------------------------------------------
+        // UI METRICS UPDATE
+        // ----------------------------------------------------
+        function updateMetrics() {
+            const total = devices.length;
+            let onlineCount = 0;
+            let ownerCount = 0;
+
+            const now = Date.now();
+
+            devices.forEach(dev => {
+                if (dev.is_device_owner) ownerCount++;
+                const telem = telemetryMap[dev.id];
+                if (telem && telem.timestamp) {
+                    const diffMs = now - new Date(telem.timestamp).getTime();
+                    if (diffMs < 15 * 60 * 1000) {
+                        onlineCount++;
+                    }
+                } else {
+                    // Default fallback mock devices consider online
+                    if (dev.id.startsWith('DEV_DEMO')) onlineCount++;
+                }
+            });
+
+            const pendingCmds = commands.filter(c => c.status === 'PENDING').length;
+
+            document.getElementById('metricTotalDevices').textContent = total;
+            document.getElementById('metricOnlineDevices').textContent = onlineCount;
+            document.getElementById('metricOnlinePercent').textContent = total > 0 ? `${Math.round((onlineCount/total)*100)}%` : '0%';
+            document.getElementById('metricCompliantDevices').textContent = ownerCount;
+            document.getElementById('metricOwnerCount').textContent = `${ownerCount} Device Owner`;
+            document.getElementById('metricPendingCommands').textContent = pendingCmds;
+            document.getElementById('metricTotalCommands').textContent = `${commands.length} en historial`;
+        }
+
+        // ----------------------------------------------------
+        // LEAFLET MAP LOGIC
+        // ----------------------------------------------------
+        function initLeafletMap() {
+            leafletMap = L.map('fleetMap', {
+                zoomControl: true,
+                attributionControl: false
+            }).setView([4.6097, -74.0817], 4);
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                maxZoom: 19,
+                subdomains: 'abcd'
+            }).addTo(leafletMap);
+        }
+
+        function renderMapMarkers() {
+            if (!leafletMap) return;
+
+            let markerBounds = [];
+            let pinCount = 0;
+
+            devices.forEach(dev => {
+                const telem = telemetryMap[dev.id];
+                if (telem && telem.latitude && telem.longitude) {
+                    const lat = telem.latitude;
+                    const lng = telem.longitude;
+
+                    const isOnline = telem.timestamp ? ((Date.now() - new Date(telem.timestamp).getTime()) < 15 * 60 * 1000) : true;
+
+                    const customIcon = L.divIcon({
+                        className: `custom-pulse-pin ${isOnline ? 'online' : 'offline'}`,
+                        html: `<div class="pin-pulse"></div><div class="pin-inner"></div>`,
+                        iconSize: [32, 32],
+                        iconAnchor: [16, 16]
+                    });
+
+                    if (mapMarkers[dev.id]) {
+                        mapMarkers[dev.id].setLatLng([lat, lng]);
+                    } else {
+                        const marker = L.marker([lat, lng], { icon: customIcon }).addTo(leafletMap);
+                        mapMarkers[dev.id] = marker;
+                    }
+
+                    // Popup Content
+                    const popupHtml = `
+                        <div class="text-xs font-sans">
+                            <div class="flex items-center justify-between font-bold text-slate-100 border-b border-slate-700 pb-1.5 mb-2">
+                                <span>${escapeHtml(dev.device_name || dev.id)}</span>
+                                <span class="px-1.5 py-0.5 rounded ${isOnline ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'} font-semibold text-[10px]">
+                                    ${isOnline ? 'EN LÍNEA' : 'OFFLINE'}
+                                </span>
+                            </div>
+                            <div class="space-y-1 text-slate-300">
+                                <p><strong class="text-slate-400">ID:</strong> <code class="text-sky-400">${dev.id}</code></p>
+                                <p><strong class="text-slate-400">Org:</strong> ${escapeHtml(dev.company || 'N/A')} - ${escapeHtml(dev.branch || 'N/A')}</p>
+                                <p><strong class="text-slate-400">Batería:</strong> ${telem.battery_level}% ${telem.is_charging ? '⚡ (Cargando)' : ''}</p>
+                                <p><strong class="text-slate-400">Red:</strong> ${telem.network_type || 'Desconocida'}</p>
+                                <p class="text-[10px] text-slate-400 pt-1 border-t border-slate-700/50 mt-1">Ubicación: ${lat.toFixed(5)}, ${lng.toFixed(5)}</p>
+                            </div>
+                            <div class="mt-2.5 pt-2 border-t border-slate-700 flex space-x-1">
+                                <button onclick="sendQuickCommand('${dev.id}', 'LOCK_DEVICE')" class="flex-1 px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded font-medium text-[10px]">
+                                    <i class="fa-solid fa-lock"></i> Bloquear
+                                </button>
+                                <button onclick="sendQuickCommand('${dev.id}', 'GET_LOCATION')" class="flex-1 px-2 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded font-medium text-[10px]">
+                                    <i class="fa-solid fa-location-arrow"></i> Ubicación
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    mapMarkers[dev.id].bindPopup(popupHtml);
+                    markerBounds.push([lat, lng]);
+                    pinCount++;
+                }
+            });
+
+            document.getElementById('mapDeviceCountBadge').textContent = `${pinCount} Pines`;
+
+            if (markerBounds.length > 0) {
+                leafletMap.fitBounds(markerBounds, { padding: [40, 40], maxZoom: 12 });
+            }
+        }
+
+        function recenterMap() {
+            renderMapMarkers();
+        }
+
+        function requestAllLocations() {
+            if (devices.length === 0) return;
+            devices.forEach(dev => {
+                sendQuickCommand(dev.id, 'GET_LOCATION');
+            });
+            alert('Comando GET_LOCATION enviado a toda la flota.');
+        }
+
+        // ----------------------------------------------------
+        // DEVICE FLEET TABLE
+        // ----------------------------------------------------
+        function renderDeviceTable() {
+            const tbody = document.getElementById('deviceTableBody');
+            const search = (document.getElementById('deviceSearchInput').value || '').toLowerCase();
+            const statusFilter = document.getElementById('statusFilterSelect').value;
+
+            const filtered = devices.filter(dev => {
+                const matchSearch = (dev.device_name || '').toLowerCase().includes(search) ||
+                                    (dev.id || '').toLowerCase().includes(search) ||
+                                    (dev.company || '').toLowerCase().includes(search) ||
+                                    (dev.branch || '').toLowerCase().includes(search);
+
+                const telem = telemetryMap[dev.id];
+                const isOnline = telem && telem.timestamp ? (Date.now() - new Date(telem.timestamp).getTime() < 15 * 60 * 1000) : true;
+
+                if (statusFilter === 'ONLINE' && !isOnline) return false;
+                if (statusFilter === 'OFFLINE' && isOnline) return false;
+
+                return matchSearch;
+            });
+
+            if (filtered.length === 0) {
+                const message = deviceLoadError
+                    ? `Error al cargar dispositivos: ${escapeHtml(deviceLoadError)}`
+                    : 'No se encontraron dispositivos registrados.';
+                tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500">${message}</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(dev => {
+                const telem = telemetryMap[dev.id] || {};
+                const isOnline = telem.timestamp ? (Date.now() - new Date(telem.timestamp).getTime() < 15 * 60 * 1000) : true;
+                const batteryPct = telem.battery_level ?? 80;
+
+                return `
+                    <tr class="hover:bg-slate-800/40 transition">
+                        <!-- Device / ID -->
+                        <td class="p-3">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-8 h-8 rounded-lg ${isOnline ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700'} flex items-center justify-center font-bold">
+                                    <i class="fa-solid fa-mobile-screen"></i>
+                                </div>
+                                <div>
+                                    <div class="font-semibold text-slate-100 flex items-center space-x-2">
+                                        <span>${escapeHtml(dev.device_name || 'Dispositivo ' + dev.id.substring(0,6))}</span>
+                                        <span class="w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-rose-500'}" title="${isOnline ? 'En línea' : 'Desconectado'}"></span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-400 font-mono">${dev.id}</p>
+                                </div>
+                            </div>
+                        </td>
+
+                        <!-- Organization -->
+                        <td class="p-3">
+                            <p class="font-medium text-slate-200">${escapeHtml(dev.company || 'P-Sync Corp')}</p>
+                            <p class="text-[11px] text-slate-400">${escapeHtml(dev.branch || 'Sede Central')} &bull; <span class="text-sky-400">${escapeHtml(dev.role || 'Operativo')}</span></p>
+                        </td>
+
+                        <!-- Battery & Network -->
+                        <td class="p-3">
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-16 bg-slate-700 h-2 rounded-full overflow-hidden">
+                                        <div class="h-full ${batteryPct > 20 ? 'bg-emerald-500' : 'bg-rose-500'}" style="width: ${batteryPct}%"></div>
+                                    </div>
+                                    <span class="text-[11px] font-mono text-slate-300">${batteryPct}% ${telem.is_charging ? '⚡' : ''}</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400"><i class="fa-solid fa-wifi text-[10px]"></i> ${telem.network_type || 'WIFI'}</p>
+                            </div>
+                        </td>
+
+                        <!-- MDM Rights -->
+                        <td class="p-3">
+                            <div class="flex flex-col space-y-1">
+                                ${dev.is_device_owner ?
+                                    `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 w-fit"><i class="fa-solid fa-shield-halved mr-1"></i> Device Owner</span>` :
+                                    `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-400 border border-slate-700 w-fit">Profile Owner</span>`
+                                }
+                            </div>
+                        </td>
+
+                        <!-- Last Telemetry -->
+                        <td class="p-3 text-[11px] text-slate-400">
+                            ${telem.timestamp ? formatDate(telem.timestamp) : 'Reciente'}
+                        </td>
+
+                        <!-- Actions -->
+                        <td class="p-3 text-center">
+                            <div class="flex items-center justify-center space-x-1">
+                                <button onclick="sendQuickCommand('${dev.id}', 'LOCK_DEVICE')" title="Bloquear Pantalla" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition">
+                                    <i class="fa-solid fa-lock"></i>
+                                </button>
+                                <button onclick="sendQuickCommand('${dev.id}', 'GET_LOCATION')" title="Obtener Ubicación" class="p-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 transition">
+                                    <i class="fa-solid fa-location-crosshairs"></i>
+                                </button>
+                                <button onclick="sendQuickCommand('${dev.id}', 'SYNC_INVENTORY')" title="Sincronizar Inventario" class="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition">
+                                    <i class="fa-solid fa-rotate"></i>
+                                </button>
+                                <button onclick="openInstallApkModal('${dev.id}')" title="Instalar APK" class="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition">
+                                    <i class="fa-solid fa-box-archive"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function filterDeviceTable() {
+            renderDeviceTable();
+        }
+
+        function updateDeviceSelectors() {
+            const auditFilter = document.getElementById('auditDeviceFilter');
+            const modalTarget = document.getElementById('modalDeviceTarget');
+
+            const options = devices.map(d => `<option value="${d.id}">${escapeHtml(d.device_name || d.id)} (${d.id})</option>`).join('');
+
+            auditFilter.innerHTML = `<option value="ALL">Todos los Dispositivos</option>` + options;
+            modalTarget.innerHTML = `<option value="ALL">Todos los Dispositivos (Broadcast)</option>` + options;
+        }
+
+        // ----------------------------------------------------
+        // QUICK COMMAND DISPATCHER
+        // ----------------------------------------------------
+        async function sendQuickCommand(deviceId, commandType, payload = null) {
+            logTerminal(`[COMANDO SOLICITADO] -> ${commandType} para ${deviceId}`, 'command');
+
+            const commandObj = {
+                device_id: deviceId,
+                command_type: commandType,
+                status: 'PENDING',
+                payload: payload,
+                created_at: new Date().toISOString()
+            };
+
+            try {
+                if (!supabase) initSupabaseClient();
+                if (supabase) {
+                    let { error } = await supabase.from('comandos_remotos').insert([commandObj]);
+                    if (error) {
+                        await supabase.from('remote_commands').insert([commandObj]);
+                    }
+                }
+            } catch (err) {
+                console.warn('[SUPABASE] Command fallback:', err);
+            }
+
+            commands.unshift(commandObj);
+            logTerminal(`[COMANDO REGISTRADO] ${commandType} status PENDING`, 'command');
+            updateMetrics();
+        }
+
+        // ----------------------------------------------------
+        // INSTALL APK MODAL
+        // ----------------------------------------------------
+        function openInstallApkModal(targetDeviceId = 'ALL') {
+            document.getElementById('modalDeviceTarget').value = targetDeviceId;
+            document.getElementById('installApkModal').classList.remove('hidden');
+        }
+
+        function closeInstallApkModal() {
+            document.getElementById('installApkModal').classList.add('hidden');
+        }
+
+        async function submitInstallApk(e) {
+            e.preventDefault();
+            const target = document.getElementById('modalDeviceTarget').value;
+            const apkUrl = document.getElementById('modalApkUrl').value.trim();
+
+            if (!apkUrl) return;
+
+            if (target === 'ALL') {
+                for (const dev of devices) {
+                    await sendQuickCommand(dev.id, 'INSTALL_APK', apkUrl);
+                }
+            } else {
+                await sendQuickCommand(target, 'INSTALL_APK', apkUrl);
+            }
+
+            closeInstallApkModal();
+            document.getElementById('modalApkUrl').value = '';
+            alert('Comando de instalación de APK desplegado exitosamente.');
+        }
+
+        // ----------------------------------------------------
+        // AUDIT LOGS TABS
+        // ----------------------------------------------------
+        function switchAuditTab(tabName) {
+            activeAuditTab = tabName;
+
+            document.querySelectorAll('.audit-tab-btn').forEach(btn => {
+                btn.className = "audit-tab-btn px-3 py-2 rounded-t-lg font-medium text-xs flex items-center space-x-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200";
+            });
+            const activeBtn = document.getElementById(`tabBtn-${tabName}`);
+            if (activeBtn) {
+                activeBtn.className = "audit-tab-btn px-3 py-2 rounded-t-lg font-medium text-xs flex items-center space-x-2 border-b-2 border-sky-500 text-sky-400 bg-slate-800";
+            }
+
+            document.querySelectorAll('.audit-tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            document.getElementById(`tabContent-${tabName}`).classList.remove('hidden');
+
+            filterAuditLogs();
+        }
+
+        function filterAuditLogs() {
+            if (activeAuditTab === 'calls') renderCallLogsTable();
+            else if (activeAuditTab === 'data') renderDataUsageTable();
+            else if (activeAuditTab === 'web') renderWebLogsTable();
+            else if (activeAuditTab === 'apps') renderAppInventoryTable();
+        }
+
+        function getSelectedDeviceFilter() {
+            return document.getElementById('auditDeviceFilter').value;
+        }
+
+        function renderCallLogsTable() {
+            const tbody = document.getElementById('callLogsTableBody');
+            const targetDev = getSelectedDeviceFilter();
+
+            const items = callLogs.filter(c => targetDev === 'ALL' || c.device_id === targetDev);
+
+            if (items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-500">Sin registros de llamadas.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => `
+                <tr class="hover:bg-slate-800/40 transition">
+                    <td class="p-3 font-mono text-sky-400">${escapeHtml(item.device_id)}</td>
+                    <td class="p-3 font-medium">${escapeHtml(item.contact_name || item.phone_number)} <span class="text-slate-400 text-[11px]">(${item.phone_number})</span></td>
+                    <td class="p-3">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${getCallTypeBadgeClass(item.call_type)}">
+                            ${item.call_type}
+                        </span>
+                    </td>
+                    <td class="p-3 text-slate-300 font-mono">${formatDuration(item.duration_seconds)}</td>
+                    <td class="p-3 text-slate-400">${formatDate(item.timestamp || item.created_at)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderDataUsageTable() {
+            const tbody = document.getElementById('dataUsageTableBody');
+            const targetDev = getSelectedDeviceFilter();
+
+            const items = dataUsageLogs.filter(d => targetDev === 'ALL' || d.device_id === targetDev);
+
+            if (items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500">Sin registros de consumo de datos.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => `
+                <tr class="hover:bg-slate-800/40 transition">
+                    <td class="p-3 font-mono text-sky-400">${escapeHtml(item.device_id)}</td>
+                    <td class="p-3">
+                        <p class="font-medium text-slate-100">${escapeHtml(item.app_name || item.package_name)}</p>
+                        <p class="text-[11px] text-slate-400 font-mono">${item.package_name}</p>
+                    </td>
+                    <td class="p-3 font-mono text-emerald-400">${formatBytes(item.mobile_bytes)}</td>
+                    <td class="p-3 font-mono text-indigo-400">${formatBytes(item.wifi_bytes)}</td>
+                    <td class="p-3 font-mono font-bold text-white">${formatBytes(item.total_bytes || (item.mobile_bytes + item.wifi_bytes))}</td>
+                    <td class="p-3 text-slate-400">${item.time_window || 'HOY'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderWebLogsTable() {
+            const tbody = document.getElementById('webLogsTableBody');
+            const targetDev = getSelectedDeviceFilter();
+
+            const items = webLogs.filter(w => targetDev === 'ALL' || w.device_id === targetDev);
+
+            if (items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500">Sin registros de navegación web.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => `
+                <tr class="hover:bg-slate-800/40 transition">
+                    <td class="p-3 font-mono text-sky-400">${escapeHtml(item.device_id)}</td>
+                    <td class="p-3 font-medium text-slate-200">${escapeHtml(item.title || item.domain)}</td>
+                    <td class="p-3 font-mono text-xs text-sky-300 max-w-xs truncate">
+                        <a href="${item.url}" target="_blank" class="hover:underline">${escapeHtml(item.url)}</a>
+                    </td>
+                    <td class="p-3 text-slate-400">${escapeHtml(item.browser_package || 'Chrome')}</td>
+                    <td class="p-3">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${item.action === 'BLOCKED' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}">
+                            ${item.action || 'ALLOWED'}
+                        </span>
+                    </td>
+                    <td class="p-3 text-slate-400">${formatDate(item.timestamp || item.created_at)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderAppInventoryTable() {
+            const tbody = document.getElementById('appInventoryTableBody');
+            const targetDev = getSelectedDeviceFilter();
+
+            const items = appInventory.filter(a => targetDev === 'ALL' || a.device_id === targetDev);
+
+            if (items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500">Sin datos de inventario de apps.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => `
+                <tr class="hover:bg-slate-800/40 transition">
+                    <td class="p-3 font-mono text-sky-400">${escapeHtml(item.device_id)}</td>
+                    <td class="p-3 font-medium text-slate-100">${escapeHtml(item.app_name)}</td>
+                    <td class="p-3 font-mono text-slate-400">${escapeHtml(item.package_name)}</td>
+                    <td class="p-3 font-mono text-slate-300">${escapeHtml(item.version_name || '1.0')}</td>
+                    <td class="p-3">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-semibold ${item.is_system_app ? 'bg-amber-500/20 text-amber-300' : 'bg-sky-500/20 text-sky-300'}">
+                            ${item.is_system_app ? 'Sistema' : 'Usuario'}
+                        </span>
+                    </td>
+                    <td class="p-3 text-slate-400">${item.updated_at ? formatDate(item.updated_at) : 'N/A'}</td>
+                </tr>
+            `).join('');
+        }
+
+        // ----------------------------------------------------
+        // LIVE TERMINAL LOGS
+        // ----------------------------------------------------
+        function logTerminal(text, type = 'info') {
+            const container = document.getElementById('terminalContainer');
+            if (!container) return;
+
+            const timeStr = new Date().toLocaleTimeString();
+            let colorClass = 'text-slate-300';
+
+            if (type === 'telemetry') colorClass = 'text-emerald-400';
+            else if (type === 'command') colorClass = 'text-sky-400';
+            else if (type === 'warn') colorClass = 'text-amber-400';
+            else if (type === 'error') colorClass = 'text-rose-400';
+            else if (type === 'system') colorClass = 'text-indigo-400 font-semibold';
+
+            const line = document.createElement('p');
+            line.className = `text-[11px] font-mono leading-relaxed ${colorClass}`;
+            line.innerHTML = `<span class="text-slate-500">[${timeStr}]</span> ${escapeHtml(text)}`;
+
+            container.appendChild(line);
+
+            if (autoScrollTerminal) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function clearTerminal() {
+            const container = document.getElementById('terminalContainer');
+            if (container) container.innerHTML = '<p class="text-slate-500 text-xs">// Terminal limpiado.</p>';
+        }
+
+        function toggleAutoScroll() {
+            autoScrollTerminal = !autoScrollTerminal;
+            const btn = document.getElementById('autoScrollBtn');
+            btn.innerHTML = `<i class="fa-solid fa-angles-down"></i> <span>Auto-scroll: ${autoScrollTerminal ? 'ON' : 'OFF'}</span>`;
+        }
+
+        // ----------------------------------------------------
+        // HELPER UTILITIES
+        // ----------------------------------------------------
+        function normalizeDevice(device) {
+            const id = device.id ?? device.device_id;
+            if (id === undefined || id === null || String(id).trim() === '') {
+                console.warn('[SUPABASE] Registro de dispositivo sin id/device_id:', device);
+                return null;
+            }
+
+            return {
+                ...device,
+                id: String(id),
+                device_name: device.device_name || device.display_name || device.name || String(id),
+                company: device.company || device.company_name || device.organization_name || device.organization_id,
+                branch: device.branch || device.branch_name || device.branch_id,
+                role: device.role || device.area_role || device.role_name || device.management_mode
+            };
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function formatDate(ts) {
+            if (!ts) return 'N/A';
+            const date = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+            return date.toLocaleString();
+        }
+
+        function formatDuration(sec) {
+            if (!sec) return '0s';
+            const mins = Math.floor(sec / 60);
+            const remainder = sec % 60;
+            return mins > 0 ? `${mins}m ${remainder}s` : `${remainder}s`;
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function getCallTypeBadgeClass(type) {
+            switch (type) {
+                case 'INCOMING': return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                case 'OUTGOING': return 'bg-sky-500/20 text-sky-300 border border-sky-500/30';
+                case 'MISSED': return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
+                case 'BLOCKED': return 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+                default: return 'bg-slate-700 text-slate-300';
+            }
+        }
+
+        function getMockTelemetry() {
+            const now = new Date().toISOString();
+            return [
+                { id: "t1", device_id: "DEV_DEMO_001", latitude: 19.4326, longitude: -99.1332, battery_level: 85, is_charging: true, network_type: "WIFI", timestamp: now },
+                { id: "t2", device_id: "DEV_DEMO_002", latitude: 4.6097, longitude: -74.0817, battery_level: 62, is_charging: false, network_type: "LTE_4G", timestamp: now },
+                { id: "t3", device_id: "DEV_DEMO_003", latitude: -33.4489, longitude: -70.6693, battery_level: 18, is_charging: false, network_type: "5G", timestamp: now }
+            ];
+        }
+
+        function getMockCommands() {
+            return [
+                { id: "c1", device_id: "DEV_DEMO_001", command_type: "LOCK_DEVICE", status: "EXECUTED", created_at: new Date(Date.now() - 3600000).toISOString() },
+                { id: "c2", device_id: "DEV_DEMO_002", command_type: "SYNC_INVENTORY", status: "PENDING", created_at: new Date().toISOString() },
+                { id: "c3", device_id: "DEV_DEMO_003", command_type: "GET_LOCATION", status: "EXECUTED", created_at: new Date(Date.now() - 1800000).toISOString() }
+            ];
+        }
+
+        function getMockCallLogs() {
+            return [
+                { id: "cl1", device_id: "DEV_DEMO_001", phone_number: "+52 55 1234 5678", contact_name: "Central Operaciones", call_type: "INCOMING", duration_seconds: 145, timestamp: Date.now() - 1800000 },
+                { id: "cl2", device_id: "DEV_DEMO_002", phone_number: "+57 300 987 6543", contact_name: "Cliente Final #402", call_type: "OUTGOING", duration_seconds: 62, timestamp: Date.now() - 3600000 },
+                { id: "cl3", device_id: "DEV_DEMO_003", phone_number: "+56 9 8765 4321", contact_name: "Soporte Técnico", call_type: "MISSED", duration_seconds: 0, timestamp: Date.now() - 7200000 }
+            ];
+        }
+
+        function getMockDataUsageLogs() {
+            return [
+                { id: "du1", device_id: "DEV_DEMO_001", app_name: "P-Sync Agent", package_name: "com.example.p_sync", mobile_bytes: 45200000, wifi_bytes: 128000000, total_bytes: 173200000, time_window: "TODAY" },
+                { id: "du2", device_id: "DEV_DEMO_002", app_name: "Google Maps Navigation", package_name: "com.google.android.apps.maps", mobile_bytes: 154000000, wifi_bytes: 32000000, total_bytes: 186000000, time_window: "TODAY" },
+                { id: "du3", device_id: "DEV_DEMO_003", app_name: "Outlook Mobile", package_name: "com.microsoft.office.outlook", mobile_bytes: 89000000, wifi_bytes: 210000000, total_bytes: 299000000, time_window: "TODAY" }
+            ];
+        }
+
+        function getMockWebLogs() {
+            return [
+                { id: "wl1", device_id: "DEV_DEMO_001", title: "Portal de Inventarios P-Sync", domain: "psync.enterprise.internal", url: "https://psync.enterprise.internal/dashboard", browser_package: "com.android.chrome", action: "ALLOWED", timestamp: Date.now() - 900000 },
+                { id: "wl2", device_id: "DEV_DEMO_002", title: "Sitio no Autorizado", domain: "facebook.com", url: "https://facebook.com", browser_package: "com.android.chrome", action: "BLOCKED", timestamp: Date.now() - 2700000 },
+                { id: "wl3", device_id: "DEV_DEMO_003", title: "Intranet Corporativa", domain: "intranet.corp.com", url: "https://intranet.corp.com", browser_package: "com.android.chrome", action: "ALLOWED", timestamp: Date.now() - 1400000 }
+            ];
+        }
+
+        function getMockAppInventory() {
+            return [
+                { id: "ai1", device_id: "DEV_DEMO_001", app_name: "P-Sync Enterprise MDM", package_name: "com.example.p_sync", version_name: "1.0.0", is_system_app: false, updated_at: new Date().toISOString() },
+                { id: "ai2", device_id: "DEV_DEMO_002", app_name: "Google Chrome Enterprise", package_name: "com.android.chrome", version_name: "122.0.6261.64", is_system_app: true, updated_at: new Date().toISOString() },
+                { id: "ai3", device_id: "DEV_DEMO_003", app_name: "Microsoft Teams", package_name: "com.microsoft.teams", version_name: "1416/1.0.0", is_system_app: false, updated_at: new Date().toISOString() }
+            ];
+        }
+    </script>
+</body>
+</html>
